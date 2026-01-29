@@ -2,22 +2,55 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ProductController; // se importa el controlador de productos
+use App\Http\Controllers\api\ProductController;
+use App\Http\Controllers\api\AuthController;
+use App\Http\Controllers\api\UserControler;
 
-//GET
-Route::get('/products', [ProductController::class, 'index']);
+/*
+|--------------------------------------------------------------------------
+| Rutas Públicas (Sin autenticación)
+|--------------------------------------------------------------------------
+*/
 
-//POST
-Route::post('/products', [ProductController::class, 'store']);
+// Rutas de Autenticación
+Route::prefix('auth')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+});
 
-//POST FOR ID
-Route::get('/products/{id}', [ProductController::class, 'show']);
+/*
+|--------------------------------------------------------------------------
+| Rutas Protegidas (Requieren autenticación con Sanctum)
+|--------------------------------------------------------------------------
+*/
 
-//PUT
-Route::put('/products/{id}', [ProductController::class, 'update']);
+Route::middleware('auth:sanctum')->group(function () {
+    
+    // Rutas de Autenticación protegidas
+    Route::prefix('auth')->group(function () {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/logout-all', [AuthController::class, 'logoutAll']);
+        Route::get('/me', [AuthController::class, 'me']);
+        Route::post('/refresh', [AuthController::class, 'refresh']);
+    });
 
-//PATCH
-Route::patch('/products/{id}', [ProductController::class, 'updatePartial']);
+    // Rutas de Usuarios
+    Route::prefix('users')->group(function () {
+        Route::get('/', [UserControler::class, 'index']);
+        Route::get('/{id}', [UserControler::class, 'show']);
+        Route::put('/{id}', [UserControler::class, 'update']);
+        Route::patch('/{id}', [UserControler::class, 'updatePartial']);
+        Route::put('/{id}/password', [UserControler::class, 'changePassword']);
+        Route::delete('/{id}', [UserControler::class, 'destroy']);
+    });
 
-//DELETE
-Route::delete('/products/{id}', [ProductController::class, 'destroy']);
+    // Rutas de Productos (protegidas)
+    Route::prefix('products')->group(function () {
+        Route::get('/', [ProductController::class, 'index']);
+        Route::post('/', [ProductController::class, 'store']);
+        Route::get('/{id}', [ProductController::class, 'show']);
+        Route::put('/{id}', [ProductController::class, 'update']);
+        Route::patch('/{id}', [ProductController::class, 'updatePartial']);
+        Route::delete('/{id}', [ProductController::class, 'destroy']);
+    });
+});
