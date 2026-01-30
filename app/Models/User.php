@@ -21,9 +21,27 @@ class User extends Authenticatable
     protected $fillable = [
         'username',
         'phone_number',
+        'avatar',
         'email',
+        'role',
         'password',
     ];
+
+    /**
+     * Relación con productos
+     */
+    public function products()
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    /**
+     * Verificar si el usuario es admin
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
 
     /**
      * The attributes that should be hidden for serialization.

@@ -6,13 +6,21 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Auth;
 
 class ProductController extends Controller
 {
     //
     public function index()
     {
-        $products = Product::paginate(10);
+        $user = Auth::user();
+
+        // Admin ve todos los productos, usuarios normales solo los suyos
+        if ($user->isAdmin()) {
+            $products = Product::paginate(10);
+        } else {
+            $products = Product::where('user_id', $user->id)->paginate(10);
+        }
 
         if ($products->isEmpty()) {
             return response()->json([
@@ -33,12 +41,20 @@ class ProductController extends Controller
 
     public function show($id)
     {
+        $user = Auth::user();
         $product = Product::find($id);
 
         if (!$product) {
             return response()->json([
                 'message' => 'Producto no encontrado'
             ], 404);
+        }
+
+        // Verificar acceso: admin o dueño del producto
+        if (!$user->isAdmin() && $product->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'No tienes permiso para ver este producto'
+            ], 403);
         }
 
         return response()->json([
@@ -50,8 +66,12 @@ class ProductController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
+            'sku' => 'required|string|unique:products,sku',
+            'category' => 'nullable|string|max:255',
             'price' => 'required|numeric|min:0',
+            'stock' => 'nullable|integer|min:0',
+            'status' => 'nullable|string|max:255',
+            'avatar' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -64,9 +84,14 @@ class ProductController extends Controller
         }
 
         $product = Product::create([
+            'user_id' => Auth::id(),
             'name' => $request->name,
-            'description' => $request->description,
+            'sku' => $request->sku,
+            'category' => $request->category,
             'price' => $request->price,
+            'stock' => $request->stock ?? 0,
+            'status' => $request->status,
+            'avatar' => $request->avatar,
         ]);
 
         if (!$product) {
@@ -80,6 +105,7 @@ class ProductController extends Controller
 
         $data = [
             'message' => 'Producto creado exitosamente',
+            'data' => $product,
             'status' => 201
         ];
         return response()->json($data, 201);
@@ -87,48 +113,78 @@ class ProductController extends Controller
 
     public function update(Request $request, $id)
     {
-        //
+        $user = Auth::user();
+        $product = Product::find($id);
+
+        if (!$product) {
+            return response()->json([
+                'message' => 'Producto no encontrado'
+            ], 404);
+        }
+
+        // Verificar acceso: admin o dueño del producto
+        if (!$user->isAdmin() && $product->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'No tienes permiso para editar este producto'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
+            'sku' => 'required|string|unique:products,sku,' . $id,
+            'category' => 'nullable|string|max:255',
             'price' => 'required|numeric|min:0',
+            'stock' => 'nullable|integer|min:0',
+            'status' => 'nullable|string|max:255',
+            'avatar' => 'nullable|string',
         ]);
+
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Error de validación',
                 'errors' => $validator->errors()
             ], 400);
         }
-        $product = Product::findOrFail($id);
-        $product -> update ([
+
+        $product->update([
             'name' => $request->name,
-            'description' => $request->description,
+            'sku' => $request->sku,
+            'category' => $request->category,
             'price' => $request->price,
+            'stock' => $request->stock ?? 0,
+            'status' => $request->status,
+            'avatar' => $request->avatar,
         ]);
-        if (!$product) {
-            return response()->json([
-                'message' => 'Producto no encontrado'
-            ], 404);
-        }
+
         return response()->json([
             'message' => 'Producto actualizado exitosamente',
-            'status'=> 200
-        ],200);
+            'data' => $product,
+            'status' => 200
+        ], 200);
     }
 
     public function destroy($id)
     {
-        //
+        $user = Auth::user();
         $product = Product::find($id);
+
         if (!$product) {
             return response()->json([
                 'message' => 'Producto no encontrado'
             ], 404);
         }
+
+        // Verificar acceso: admin o dueño del producto
+        if (!$user->isAdmin() && $product->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'No tienes permiso para eliminar este producto'
+            ], 403);
+        }
+
         $product->delete();
         return response()->json([
             'message' => 'Producto eliminado exitosamente',
-            'status'=> 200
-        ],200);
+            'status' => 200
+        ], 200);
     }
 }
