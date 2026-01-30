@@ -48,6 +48,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('products')->group(function () {
         Route::get('/', [ProductController::class, 'index']);
         Route::post('/', [ProductController::class, 'store']);
+        Route::post('/bulk', [ProductController::class, 'bulkStore']);
         Route::get('/{id}', [ProductController::class, 'show']);
         Route::put('/{id}', [ProductController::class, 'update']);
         Route::patch('/{id}', [ProductController::class, 'updatePartial']);

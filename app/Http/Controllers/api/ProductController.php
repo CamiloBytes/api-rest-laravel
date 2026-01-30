@@ -25,7 +25,7 @@ class ProductController extends Controller
         if ($products->isEmpty()) {
             return response()->json([
                 'message' => 'No products found'
-            ], 404);
+            ], 200);
         }
 
         return response()->json([
@@ -186,5 +186,54 @@ class ProductController extends Controller
             'message' => 'Producto eliminado exitosamente',
             'status' => 200
         ], 200);
+    }
+
+    /**
+     * Insertar múltiples productos a la vez
+     */
+    public function bulkStore(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'products' => 'required|array|min:1',
+            'products.*.name' => 'required|string|max:255',
+            'products.*.sku' => 'required|string|unique:products,sku',
+            'products.*.category' => 'nullable|string|max:255',
+            'products.*.price' => 'required|numeric|min:0',
+            'products.*.stock' => 'nullable|integer|min:0',
+            'products.*.status' => 'nullable|string|max:255',
+            'products.*.avatar' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Error de validación',
+                'errors' => $validator->errors(),
+                'status' => 400
+            ], 400);
+        }
+
+        $createdProducts = [];
+        $userId = Auth::id();
+
+        foreach ($request->products as $productData) {
+            $product = Product::create([
+                'user_id' => $userId,
+                'name' => $productData['name'],
+                'sku' => $productData['sku'],
+                'category' => $productData['category'] ?? null,
+                'price' => $productData['price'],
+                'stock' => $productData['stock'] ?? 0,
+                'status' => $productData['status'] ?? null,
+                'avatar' => $productData['avatar'] ?? null,
+            ]);
+            $createdProducts[] = $product;
+        }
+
+        return response()->json([
+            'message' => 'Productos creados exitosamente',
+            'total' => count($createdProducts),
+            'data' => $createdProducts,
+            'status' => 201
+        ], 201);
     }
 }
