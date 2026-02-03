@@ -20,7 +20,8 @@ return new class extends Migration
             $table->decimal('price', 10, 2);
             $table->integer('stock')->default(0);
             $table->string('status')->nullable();
-            $table->text('avatar')->nullable();
+            $table->string('image')->nullable();
+            $table->string('image_public_id')->nullable();
             $table->timestamps();
         });
     }

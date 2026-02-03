@@ -3,17 +3,26 @@
 namespace App\Http\Controllers\api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Product;
-use Illuminate\Support\Facades\Validator;
+use App\Service\CloudinaryService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
+use App\Models\User;
 
 class ProductController extends Controller
 {
-    //
+    protected $cloudinaryService;
+
+    public function __construct(CloudinaryService $cloudinaryService)
+    {
+        $this->cloudinaryService = $cloudinaryService;
+    }
+
     public function index()
     {
-        $user = Auth::user();
+        $user = User::find(Auth::id());
 
         // Admin ve todos los productos, usuarios normales solo los suyos
         if ($user->isAdmin()) {
@@ -41,7 +50,7 @@ class ProductController extends Controller
 
     public function show($id)
     {
-        $user = Auth::user();
+        $user = User::find(Auth::id());
         $product = Product::find($id);
 
         if (!$product) {
@@ -71,49 +80,79 @@ class ProductController extends Controller
             'price' => 'required|numeric|min:0',
             'stock' => 'nullable|integer|min:0',
             'status' => 'nullable|string|max:255',
-            'avatar' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
         ]);
 
         if ($validator->fails()) {
-            $data = [
+            return response()->json([
                 'message' => 'Error de validación',
                 'errors' => $validator->errors(),
                 'status' => 400
-            ];
-            return response()->json($data, 400);
+            ], 400);
         }
 
-        $product = Product::create([
-            'user_id' => Auth::id(),
-            'name' => $request->name,
-            'sku' => $request->sku,
-            'category' => $request->category,
-            'price' => $request->price,
-            'stock' => $request->stock ?? 0,
-            'status' => $request->status,
-            'avatar' => $request->avatar,
-        ]);
+        $imageUrl = null;
+        $imagePublicId = null;
 
-        if (!$product) {
-            $data = [
+        // Subir imagen si existe
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+
+            try {
+                $uploadResult = $this->cloudinaryService->upload(
+                    $file,
+                    'productos'
+                );
+
+                if (!$uploadResult['success']) {
+                    return response()->json([
+                        'message' => 'Error al subir la imagen',
+                        'error' => $uploadResult['message'],
+                        'status' => 500
+                    ], 500);
+                }
+
+                $imageUrl = $uploadResult['url'];
+                $imagePublicId = $uploadResult['public_id'];
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Error al procesar la imagen',
+                    'error' => $e->getMessage(),
+                    'status' => 500
+                ], 500);
+            }
+        }
+
+        try {
+            $product = Product::create([
+                'user_id' => Auth::id(),
+                'name' => $request->name,
+                'sku' => $request->sku,
+                'category' => $request->category,
+                'price' => $request->price,
+                'stock' => $request->stock ?? 0,
+                'status' => $request->status,
+                'image' => $imageUrl,
+                'image_public_id' => $imagePublicId,
+            ]);
+
+            return response()->json([
+                'message' => 'Producto creado exitosamente',
+                'data' => $product,
+                'status' => 201
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
                 'message' => 'Error al crear el producto',
+                'error' => $e->getMessage(),
                 'status' => 500
-            ];
-            return response()->json($data, 500);
+            ], 500);
         }
-
-
-        $data = [
-            'message' => 'Producto creado exitosamente',
-            'data' => $product,
-            'status' => 201
-        ];
-        return response()->json($data, 201);
     }
 
     public function update(Request $request, $id)
     {
-        $user = Auth::user();
+        $user = User::find(Auth::id());
         $product = Product::find($id);
 
         if (!$product) {
@@ -136,7 +175,7 @@ class ProductController extends Controller
             'price' => 'required|numeric|min:0',
             'stock' => 'nullable|integer|min:0',
             'status' => 'nullable|string|max:255',
-            'avatar' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
         ]);
 
         if ($validator->fails()) {
@@ -146,6 +185,31 @@ class ProductController extends Controller
             ], 400);
         }
 
+        // Si hay nueva imagen, eliminar la anterior y subir la nueva
+        if ($request->hasFile('image')) {
+            // Eliminar imagen anterior si existe
+            if ($product->image_public_id) {
+                $this->cloudinaryService->deleteImage($product->image_public_id);
+            }
+
+            // Subir nueva imagen
+            $uploadResult = $this->cloudinaryService->upload(
+                $request->file('image'),
+                'productos'
+            );
+
+            if (!$uploadResult['success']) {
+                return response()->json([
+                    'message' => 'Error al subir la imagen',
+                    'error' => $uploadResult['message'],
+                    'status' => 500
+                ], 500);
+            }
+
+            $product->image = $uploadResult['url'];
+            $product->image_public_id = $uploadResult['public_id'];
+        }
+
         $product->update([
             'name' => $request->name,
             'sku' => $request->sku,
@@ -153,7 +217,6 @@ class ProductController extends Controller
             'price' => $request->price,
             'stock' => $request->stock ?? 0,
             'status' => $request->status,
-            'avatar' => $request->avatar,
         ]);
 
         return response()->json([
@@ -165,7 +228,7 @@ class ProductController extends Controller
 
     public function destroy($id)
     {
-        $user = Auth::user();
+        $user = User::find(Auth::id());
         $product = Product::find($id);
 
         if (!$product) {
@@ -179,6 +242,11 @@ class ProductController extends Controller
             return response()->json([
                 'message' => 'No tienes permiso para eliminar este producto'
             ], 403);
+        }
+
+        // Eliminar imagen de Cloudinary si existe
+        if ($product->image_public_id) {
+            $this->cloudinaryService->deleteImage($product->image_public_id);
         }
 
         $product->delete();
@@ -201,7 +269,7 @@ class ProductController extends Controller
             'products.*.price' => 'required|numeric|min:0',
             'products.*.stock' => 'nullable|integer|min:0',
             'products.*.status' => 'nullable|string|max:255',
-            'products.*.avatar' => 'nullable|string',
+            'products.*.image' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -224,7 +292,7 @@ class ProductController extends Controller
                 'price' => $productData['price'],
                 'stock' => $productData['stock'] ?? 0,
                 'status' => $productData['status'] ?? null,
-                'avatar' => $productData['avatar'] ?? null,
+                'image' => $productData['image'] ?? null,
             ]);
             $createdProducts[] = $product;
         }
